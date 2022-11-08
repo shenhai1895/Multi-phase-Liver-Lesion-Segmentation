@@ -12,6 +12,8 @@ import torch.multiprocessing as mp
 from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.utils.data import DataLoader
 
+from scripts.post import max_region, vote
+
 cur_path = os.path.abspath(os.path.dirname(__file__))
 root_path = os.path.split(cur_path)[0]
 sys.path.append(root_path)
@@ -54,13 +56,21 @@ def test(rank, world_size, args):
         pred_tumor_mask[:, :, 0, :, :] += 1e-15
         pred_tumor_mask = torch.argmax(pred_tumor_mask, 2)
         time_end = time.time()
-        seg_a = pred_tumor_mask[0].cpu().numpy().astype(np.int16)
+
+        pred_tumor_mask = pred_tumor_mask.numpy().astype(np.int16)
+        for i in range(len(pred_tumor_mask)):
+            idx = (dataset.liver[0] > 0) | (pred_tumor_mask[i] > 0)
+            drop = max_region(idx) == 0
+            pred_tumor_mask[i][drop] = 0
+            pred_tumor_mask[i] = vote(pred_tumor_mask[i])
+
+        seg_a = pred_tumor_mask[0]
         savedImg = sitk.GetImageFromArray(seg_a)
         savedImg.SetSpacing(dataset.spacing)
         savedImg.SetOrigin(dataset.origin)
         sitk.WriteImage(savedImg, os.path.join(args.test_dir, name, name + "_seg_a_pred.nii.gz"))
 
-        seg_v = pred_tumor_mask[1].cpu().numpy().astype(np.int16)
+        seg_v = pred_tumor_mask[1]
         savedImg = sitk.GetImageFromArray(seg_v)
         savedImg.SetSpacing(dataset.spacing)
         savedImg.SetOrigin(dataset.origin)
