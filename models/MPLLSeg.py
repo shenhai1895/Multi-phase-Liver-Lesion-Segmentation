@@ -5,8 +5,6 @@ from segmentation_models_pytorch.base import SegmentationHead
 from segmentation_models_pytorch.encoders import get_encoder
 from torch.nn import TransformerDecoderLayer, LayerNorm, TransformerDecoder
 
-from nn.loss.focal_loss import FocalLoss
-
 
 class GlobalZ(nn.Module):
     def __init__(self, in_channel=512):
