@@ -39,20 +39,26 @@ def inference(rank, world_size, args):
         for images, images_bag, key_idx, z in d:
             images_bag = images_bag.to(rank)
             with torch.no_grad():
-                mask_0, mask_1, mask_2, mask_3 = model(images_bag)  # (b, c, z, h, w)
+                mask_0, mask_1, mask_2, mask_3 = model(
+                    images_bag)  # (b, c, z, h, w)
                 mask_0 = torch.softmax(mask_0, 1).permute((0, 2, 1, 3, 4))
                 mask_1 = torch.softmax(mask_1, 1).permute((0, 2, 1, 3, 4))
                 mask_2 = torch.softmax(mask_2, 1).permute((0, 2, 1, 3, 4))
                 mask_3 = torch.softmax(mask_3, 1).permute((0, 2, 1, 3, 4))
                 for mask_0_i, mask_1_i, mask_2_i, mask_3_i, z_i in zip(mask_0, mask_1, mask_2, mask_3, z):
-                    pred_tumor_mask[phase_idx[0], z_i:z_i + args.n_ctx] += mask_0_i.cpu()
-                    pred_tumor_mask[phase_idx[1], z_i:z_i + args.n_ctx] += mask_1_i.cpu()
-                    pred_tumor_mask[phase_idx[2], z_i:z_i + args.n_ctx] += mask_2_i.cpu()
-                    pred_tumor_mask[phase_idx[3], z_i:z_i + args.n_ctx] += mask_3_i.cpu()
+                    pred_tumor_mask[phase_idx[0], z_i:z_i +
+                                    args.n_ctx] += mask_0_i.cpu()
+                    pred_tumor_mask[phase_idx[1], z_i:z_i +
+                                    args.n_ctx] += mask_1_i.cpu()
+                    pred_tumor_mask[phase_idx[2], z_i:z_i +
+                                    args.n_ctx] += mask_2_i.cpu()
+                    pred_tumor_mask[phase_idx[3], z_i:z_i +
+                                    args.n_ctx] += mask_3_i.cpu()
                     pred_tumor_num[phase_idx, z_i:z_i + args.n_ctx] += 1
         s = dataset.base_num
         e = dataset.base_num + dataset.len + args.n_ctx - 1
-        pred_tumor_mask[:, s:e] = pred_tumor_mask[:, s:e] / pred_tumor_num[:, s:e]
+        pred_tumor_mask[:, s:e] = pred_tumor_mask[:, s:e] / \
+            pred_tumor_num[:, s:e]
         pred_tumor_mask[:, :, 0, :, :] += 1e-15
         pred_tumor_mask = torch.argmax(pred_tumor_mask, 2)
         time_end = time.time()
@@ -79,14 +85,14 @@ def inference(rank, world_size, args):
         savedImg.SetOrigin(dataset.origin)
         sitk.WriteImage(savedImg, os.path.join(
             args.o, name, "segmentation_a.nii.gz"))
-        
+
         seg_v = pred_tumor_mask[2]
         savedImg = sitk.GetImageFromArray(seg_v)
         savedImg.SetSpacing(dataset.spacing)
         savedImg.SetOrigin(dataset.origin)
         sitk.WriteImage(savedImg, os.path.join(
             args.o, name, "segmentation_v.nii.gz"))
-        
+
         seg_d = pred_tumor_mask[3]
         savedImg = sitk.GetImageFromArray(seg_d)
         savedImg.SetSpacing(dataset.spacing)
@@ -101,16 +107,6 @@ def inference(rank, world_size, args):
 
 
 def run_inference(test_fn, args, world_size):
-    """
-    predict all test cases on multiple gpu.
-    Args:
-        test_fn:
-        args:
-        world_size:
-
-    Returns:
-
-    """
     test_file_list = [i for i in os.listdir(args.i) if "example_" in i]
     test_file_list = sorted(test_file_list)
     test_file_list = np.array_split(test_file_list, world_size)
@@ -123,9 +119,12 @@ def run_inference(test_fn, args, world_size):
 
 def predict_entry_point():
     parser = argparse.ArgumentParser('Multi-phase Liver Lesion Segmentation')
-    parser.add_argument('-i', type=str, default="/data0/raw_data/sss/nii/")
-    parser.add_argument('-o', type=str, default="/data0/raw_data/sss/out/")
-    parser.add_argument('--checkpoint_path', type=str, default="/data0/wulei/train_log/p_a_v_d/model_23.pth")
+    parser.add_argument('-i', type=str, required=True, default="/data0/raw_data/sss/nii/", 
+                        help='input folder. Remember to use the correct format for your files!')
+    parser.add_argument('-o', type=str, required=True, default="/data0/raw_data/sss/out/",
+                        help='Output folder. If it does not exist it will be created.')
+    parser.add_argument('-checkpoint_path', type=str,
+                        default="/data0/wulei/train_log/p_a_v_d/model_23.pth")
     parser.add_argument('--num_classes', type=int, default=4)
     parser.add_argument('--batch_size', type=int, default=1)
     parser.add_argument('--n_ctx', type=int, default=3)

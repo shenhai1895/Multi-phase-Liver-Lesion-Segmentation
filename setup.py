@@ -2,7 +2,7 @@ from setuptools import setup, find_namespace_packages
 
 setup(name='mullet',
       packages=find_namespace_packages(include=["mullet", "mullet.*"]),
-      version='1.0.0',
+      version='1.0.1',
       description='Multi-phase Liver Lesion Segmentation. Framework for multi-phase liver lesions segmentation.',
       url='https://github.com/shenhai1895/Multi-phase-Liver-Lesion-Segmentation',
       author='Lei Wu',

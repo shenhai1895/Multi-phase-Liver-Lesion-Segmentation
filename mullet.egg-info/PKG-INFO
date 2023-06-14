@@ -1,6 +1,6 @@
 Metadata-Version: 2.1
 Name: mullet
-Version: 1.0.0
+Version: 1.0.1
 Summary: Multi-phase Liver Lesion Segmentation. Framework for multi-phase liver lesions segmentation.
 Home-page: https://github.com/shenhai1895/Multi-phase-Liver-Lesion-Segmentation
 Author: Lei Wu

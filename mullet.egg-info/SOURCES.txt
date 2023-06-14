@@ -14,6 +14,8 @@ mullet/inference/__init__.py
 mullet/inference/predict.py
 mullet/models/__init__.py
 mullet/models/mullet.py
+mullet/nn/__init__.py
+mullet/nn/positional_encoding.py
 mullet/scripts/post.py
 mullet/utils/__init__.py
 mullet/utils/utils.py
