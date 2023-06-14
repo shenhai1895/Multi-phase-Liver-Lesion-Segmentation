@@ -3,8 +3,10 @@
 ![Model architecture](docs/MULLET.svg)
 
 ## Introduction
+This project is used for liver lesions segmentation from multi-phase abdomen CT images. MULLET has been deployed in multiple hospitals and used for clinical auxiliary diagnosis. If you have any business cooperation intentions, please contact Pujian Technology [http://www.pj-ai.com/](http://www.pj-ai.com/)
 
-## requirements
+
+## Requirements
 
 ```
 torch~=2.0.1
