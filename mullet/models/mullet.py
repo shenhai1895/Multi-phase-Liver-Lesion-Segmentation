@@ -301,14 +301,3 @@ class MULLET(nn.Module):
         x_v_masks = x_v_masks.reshape(b, n, -1, h, w).permute(0, 2, 1, 3, 4)
         x_d_masks = x_d_masks.reshape(b, n, -1, h, w).permute(0, 2, 1, 3, 4)
         return x_p_masks, x_a_masks, x_v_masks, x_d_masks  # (b, c, z, h, w)
-
-
-# if __name__ == '__main__':
-#     m = DualSeg().cuda()
-#     a = torch.rand((10, 2, 3, 3, 256, 256)).cuda()
-    # b = torch.rand((90, 8, 512)).cuda()
-    # c = torch.rand((90, 8, 512)).cuda()
-    # m(a)
-    # m = TransformerBlock().cuda()
-    # a = torch.rand((10, 2, 9, 512, 16, 16)).cuda()
-    # m(a)
