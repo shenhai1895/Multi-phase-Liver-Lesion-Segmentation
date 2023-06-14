@@ -19,7 +19,7 @@ root_path = os.path.split(cur_path)[0]
 sys.path.append(root_path)
 
 from datasets.dataset import TestDualPhaseMultiSliceDataset, transforms_dla_test
-from models.MPLLSeg import DualSeg
+from models.mullet import DualSeg
 from utils.utils import mkdir, setup, cleanup
 
 
