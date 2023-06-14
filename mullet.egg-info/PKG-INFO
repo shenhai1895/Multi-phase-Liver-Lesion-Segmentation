@@ -1,0 +1,11 @@
+Metadata-Version: 2.1
+Name: mullet
+Version: 1.0.0
+Summary: Multi-phase Liver Lesion Segmentation. Framework for multi-phase liver lesions segmentation.
+Home-page: https://github.com/shenhai1895/Multi-phase-Liver-Lesion-Segmentation
+Author: Lei Wu
+Author-email: shenhai1895@zju.edu.cn
+License: MIT License
+Keywords: deep learning,image segmentation,medical image analysis,medical image segmentation,mullet
+Requires-Python: >=3.9
+License-File: LICENSE

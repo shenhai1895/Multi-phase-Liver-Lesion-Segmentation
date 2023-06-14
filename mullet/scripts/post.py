@@ -7,7 +7,6 @@ from multiprocessing import Pool
 
 import numpy as np
 import torch
-import torchvision
 from skimage.measure import label, regionprops
 from skimage.morphology import opening, disk
 

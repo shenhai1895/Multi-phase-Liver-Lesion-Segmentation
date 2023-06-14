@@ -1,0 +1,2 @@
+[console_scripts]
+mullet_predict = mullet.inference.predict:predict_entry_point

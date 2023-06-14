@@ -1,35 +1,34 @@
 import argparse
 import os
-import sys
 import time
 
 import torch
-import torchvision
 import numpy as np
 import SimpleITK as sitk
 import torch.multiprocessing as mp
 
 from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.utils.data import DataLoader
+from mullet.scripts.post import max_region, vote
 
-from scripts.post import max_region, vote
+from mullet.utils.utils import mkdir, setup, cleanup
 
-cur_path = os.path.abspath(os.path.dirname(__file__))
-root_path = os.path.split(cur_path)[0]
-sys.path.append(root_path)
-
-from datasets.dataset import TestDualPhaseMultiSliceDataset, transforms_dla_test
-from models.mullet import DualSeg
-from utils.utils import mkdir, setup, cleanup
+# from scripts.post import max_region, vote
+# from datasets.dataset import TestDualPhaseMultiSliceDataset, transforms_dla_test
+# from models.mullet import DualSeg
+# from utils.utils import mkdir, setup, cleanup
 
 
-def test(rank, world_size, args):
+def inference(rank, world_size, args):
     setup(rank, world_size, port=args.port)
     test_file_list = args.test_file_list[rank]
     num_classes = args.num_classes
-    model = DualSeg(cls=num_classes, num_tokens=16, n_context=args.n_ctx, bn=torch.nn.SyncBatchNorm).cuda(rank)
-    model = DDP(model, device_ids=[rank], output_device=rank, find_unused_parameters=True)
-    checkpoint = torch.load(os.path.join(args.checkpoint_path), map_location='cpu')
+    model = DualSeg(cls=num_classes, num_tokens=16,
+                    n_context=args.n_ctx, bn=torch.nn.SyncBatchNorm).cuda(rank)
+    model = DDP(model, device_ids=[
+                rank], output_device=rank, find_unused_parameters=True)
+    checkpoint = torch.load(os.path.join(
+        args.checkpoint_path), map_location='cpu')
     model.module.load_state_dict(checkpoint['model'])
     model.eval()
     for name in test_file_list:
@@ -52,7 +51,8 @@ def test(rank, world_size, args):
                     pred_tumor_num[:, z_i:z_i + args.n_ctx] += 1
         s = dataset.base_num
         e = dataset.base_num + dataset.len + args.n_ctx - 1
-        pred_tumor_mask[:, s:e] = pred_tumor_mask[:, s:e] / pred_tumor_num[:, s:e]
+        pred_tumor_mask[:, s:e] = pred_tumor_mask[:, s:e] / \
+            pred_tumor_num[:, s:e]
         pred_tumor_mask[:, :, 0, :, :] += 1e-15
         pred_tumor_mask = torch.argmax(pred_tumor_mask, 2)
         time_end = time.time()
@@ -68,19 +68,22 @@ def test(rank, world_size, args):
         savedImg = sitk.GetImageFromArray(seg_a)
         savedImg.SetSpacing(dataset.spacing)
         savedImg.SetOrigin(dataset.origin)
-        sitk.WriteImage(savedImg, os.path.join(args.test_dir, name, name + "_seg_a_pred.nii.gz"))
+        sitk.WriteImage(savedImg, os.path.join(
+            args.test_dir, name, name + "_seg_a_pred.nii.gz"))
 
         seg_v = pred_tumor_mask[1]
         savedImg = sitk.GetImageFromArray(seg_v)
         savedImg.SetSpacing(dataset.spacing)
         savedImg.SetOrigin(dataset.origin)
-        sitk.WriteImage(savedImg, os.path.join(args.test_dir, name, name+"_seg_v_pred.nii.gz"))
+        sitk.WriteImage(savedImg, os.path.join(
+            args.test_dir, name, name + "_seg_v_pred.nii.gz"))
         print(name, str(time_end - time_start) + "s")
-        print("Saved the segmentation in ", os.path.join(args.test_dir, name, name+"_seg_v_pred.nii.gz"))
+        print("Saved the segmentation in ", os.path.join(
+            args.test_dir, name, name + "_seg_v_pred.nii.gz"))
     cleanup()
 
 
-def run_test(test_fn, args, world_size):
+def run_inference(test_fn, args, world_size):
     """
     predict all test cases on multiple gpu.
     Args:
@@ -99,23 +102,18 @@ def run_test(test_fn, args, world_size):
              args=(world_size, args),
              nprocs=world_size,
              join=True)
-    
+
 
 def predict_entry_point():
-    pass
-
-
-if __name__ == '__main__':
     parser = argparse.ArgumentParser('Multi-phase Liver Lesion Segmentation')
-    parser.add_argument('--test_dir', type=str, default="/xxx/data")
-    parser.add_argument('--checkpoint_path', type=str, default="/data0/xxx/train_log/model.pth")
+    parser.add_argument('-i', type=str, required=True)
+    parser.add_argument('-o', type=str, required=True)
     parser.add_argument('--num_classes', type=int, default=4)
     parser.add_argument('--batch_size', type=int, default=5)
     parser.add_argument('--n_ctx', type=int, default=3)
     parser.add_argument('--num_workers', type=int, default=1)
-    parser.add_argument('--same_slice', type=bool, default=False)
     parser.add_argument('--devices', type=int, nargs='+', default=[0])
-    parser.add_argument('--port', type=str, default="1894")
+    parser.add_argument('--port', type=str, default="6666")
 
     args = parser.parse_args()
 
@@ -123,5 +121,26 @@ if __name__ == '__main__':
     os.environ["CUDA_VISIBLE_DEVICES"] = devices
 
     n_gpus = torch.cuda.device_count()
-    run_test(test, args, n_gpus)
+    run_inference(inference, args, n_gpus)
 
+
+# if __name__ == '__main__':
+#     parser = argparse.ArgumentParser('Multi-phase Liver Lesion Segmentation')
+#     parser.add_argument('--test_dir', type=str, default="/xxx/data")
+#     parser.add_argument('--checkpoint_path', type=str,
+#                         default="/data0/xxx/train_log/model.pth")
+#     parser.add_argument('--num_classes', type=int, default=4)
+#     parser.add_argument('--batch_size', type=int, default=5)
+#     parser.add_argument('--n_ctx', type=int, default=3)
+#     parser.add_argument('--num_workers', type=int, default=1)
+#     parser.add_argument('--same_slice', type=bool, default=False)
+#     parser.add_argument('--devices', type=int, nargs='+', default=[0])
+#     parser.add_argument('--port', type=str, default="1894")
+
+#     args = parser.parse_args()
+
+#     devices = ','.join([str(s) for s in args.devices])
+#     os.environ["CUDA_VISIBLE_DEVICES"] = devices
+
+#     n_gpus = torch.cuda.device_count()
+#     run_test(test, args, n_gpus)

@@ -1,7 +1,6 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from segmentation_models_pytorch.base import SegmentationHead
 from segmentation_models_pytorch.encoders import get_encoder
 from torch.nn import TransformerDecoderLayer, LayerNorm, TransformerDecoder
 
