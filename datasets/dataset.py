@@ -6,7 +6,6 @@ import json
 import os
 import torch
 import SimpleITK as sitk
-import torchvision
 import numpy as np
 from glob import glob
 from torch.utils.data import Dataset
