@@ -78,9 +78,3 @@ class MultiPhaseMultiSliceInferenceDataset(Dataset):
         z = torch.as_tensor(z, dtype=torch.int64)
 
         return images[:, key_idx], images, key_idx, z
-
-
-if __name__ == '__main__':
-    m = MultiPhaseMultiSliceInferenceDataset()
-    for i in m:
-        pass
