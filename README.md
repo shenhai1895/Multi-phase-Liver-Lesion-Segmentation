@@ -20,6 +20,12 @@ scikit-image~=0.19.3
 
 ## Install
 We recommend using anaconda to build a virtual Python environment. 
+```
+conda create -n mullet python=3.9
+conda activate mullet
+conda install pytorch torchvision numpy=1.24.3 tqdm=4.65.0 simpleitk=2.2.1 torchaudio scikit-image=0.19.3 pytorch-cuda=11.7 -c pytorch -c nvidia -c simpleitk
+pip install argparse=1.4.0 segmentation_models_pytorch=0.3.2
+```
 For use as integrative **framework** (this will create a copy of the MULLET code on your computer so that you can modify it as needed):
 ```bash
 git clone https://github.com/shenhai1895/Multi-phase-Liver-Lesion-Segmentation.git
