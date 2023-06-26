@@ -19,6 +19,7 @@ scikit-image~=0.19.3
 ```
 
 ## Install
+We recommend using anaconda to build a virtual Python environment. 
 For use as integrative **framework** (this will create a copy of the MULLET code on your computer so that you can modify it as needed):
 ```bash
 git clone https://github.com/shenhai1895/Multi-phase-Liver-Lesion-Segmentation.git
