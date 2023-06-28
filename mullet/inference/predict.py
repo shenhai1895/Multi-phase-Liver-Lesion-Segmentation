@@ -77,28 +77,28 @@ def inference(rank, world_size, args):
         savedImg.SetSpacing(dataset.spacing)
         savedImg.SetOrigin(dataset.origin)
         sitk.WriteImage(savedImg, os.path.join(
-            args.o, name, "segmentation_p.nii.gz"))
+            args.o, name, "segmentation_1.nii.gz"))
 
         seg_a = pred_tumor_mask[1]
         savedImg = sitk.GetImageFromArray(seg_a)
         savedImg.SetSpacing(dataset.spacing)
         savedImg.SetOrigin(dataset.origin)
         sitk.WriteImage(savedImg, os.path.join(
-            args.o, name, "segmentation_a.nii.gz"))
+            args.o, name, "segmentation_2.nii.gz"))
 
         seg_v = pred_tumor_mask[2]
         savedImg = sitk.GetImageFromArray(seg_v)
         savedImg.SetSpacing(dataset.spacing)
         savedImg.SetOrigin(dataset.origin)
         sitk.WriteImage(savedImg, os.path.join(
-            args.o, name, "segmentation_v.nii.gz"))
+            args.o, name, "segmentation_3.nii.gz"))
 
         seg_d = pred_tumor_mask[3]
         savedImg = sitk.GetImageFromArray(seg_d)
         savedImg.SetSpacing(dataset.spacing)
         savedImg.SetOrigin(dataset.origin)
         sitk.WriteImage(savedImg, os.path.join(
-            args.o, name, "segmentation_d.nii.gz"))
+            args.o, name, "segmentation_4.nii.gz"))
 
         print(name, str(time_end - time_start) + "s")
         print("Saved the segmentation in ", os.path.join(
