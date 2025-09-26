@@ -36,7 +36,7 @@ pip install -e .
 ## Usage
 
 A trained weight is
-available [here](https://drive.google.com/file/d/1JJxwhunUES6D3cYH1BzA7elslU0ymlPj/view?usp=sharing).
+available [here](https://drive.google.com/file/d/1oMlzsU7KLuQzya52WmgxQTcBS36EfdIG/view?usp=sharing).
 Also, some cases is available [here](https://drive.google.com/file/d/125EvD3rp1BXqMlD2ahsib0jl-B68bEa2/view?usp=sharing) for evaluation. 
 
 Run inference in terminal:
