@@ -19,8 +19,8 @@ def inference(rank, world_size, args):
     setup(rank, world_size, port=args.port)
     test_file_list = args.test_file_list[rank]
     num_classes = args.num_classes
-    model = MULLET(cls=num_classes, num_tokens=24,
-                   n_context=args.n_ctx, bn=torch.nn.SyncBatchNorm).cuda(rank)
+    model = MULLET(cls=num_classes, num_tokens=16,
+                   n_context=args.n_ctx).cuda(rank)
     model = DDP(model, device_ids=[
                 rank], output_device=rank, find_unused_parameters=True)
     checkpoint = torch.load(os.path.join(
@@ -32,38 +32,31 @@ def inference(rank, world_size, args):
             os.path.join(args.i, name), n_ctx=args.n_ctx)
         d = DataLoader(dataset, args.batch_size, num_workers=args.num_workers)
         s, z, w, h = dataset.shape
-        pred_tumor_mask = torch.zeros((s, z, num_classes, w, h))
-        pred_tumor_num = torch.zeros((s, z, num_classes, w, h))
+        pred_tumor_mask = torch.zeros((s, z, num_classes, w, h)).to(rank)
+        pred_tumor_num = torch.zeros((s, z, num_classes, w, h)).to(rank)
         time_start = time.time()
         phase_idx = [0, 1, 2, 3]
         for images, images_bag, key_idx, z in d:
             images_bag = images_bag.to(rank)
             with torch.no_grad():
-                mask_0, mask_1, mask_2, mask_3 = model(
-                    images_bag)  # (b, c, z, h, w)
-                mask_0 = torch.softmax(mask_0, 1).permute((0, 2, 1, 3, 4))
-                mask_1 = torch.softmax(mask_1, 1).permute((0, 2, 1, 3, 4))
-                mask_2 = torch.softmax(mask_2, 1).permute((0, 2, 1, 3, 4))
-                mask_3 = torch.softmax(mask_3, 1).permute((0, 2, 1, 3, 4))
-                for mask_0_i, mask_1_i, mask_2_i, mask_3_i, z_i in zip(mask_0, mask_1, mask_2, mask_3, z):
-                    pred_tumor_mask[phase_idx[0], z_i:z_i +
-                                    args.n_ctx] += mask_0_i.cpu()
-                    pred_tumor_mask[phase_idx[1], z_i:z_i +
-                                    args.n_ctx] += mask_1_i.cpu()
-                    pred_tumor_mask[phase_idx[2], z_i:z_i +
-                                    args.n_ctx] += mask_2_i.cpu()
-                    pred_tumor_mask[phase_idx[3], z_i:z_i +
-                                    args.n_ctx] += mask_3_i.cpu()
-                    pred_tumor_num[phase_idx, z_i:z_i + args.n_ctx] += 1
+                mask = model(images_bag[:, phase_idx])  # (b, c, z, h, w)
+                for i in range(len(mask)):
+                    mask[i] = torch.softmax(mask[i], 1).permute((0, 2, 1, 3, 4))
+                for i in range(len(mask)):
+                    for mask_i, z_i in zip(mask[i], z):
+                        pred_tumor_mask[phase_idx[i], z_i : z_i + args.n_ctx] += mask_i
+                        pred_tumor_num[phase_idx[i], z_i : z_i + args.n_ctx] += 1
         s = dataset.base_num
         e = dataset.base_num + dataset.len + args.n_ctx - 1
-        pred_tumor_mask[:, s:e] = pred_tumor_mask[:, s:e] / \
-            pred_tumor_num[:, s:e]
+        for i in range(s, e):
+            pred_tumor_mask[phase_idx, i] = (
+                pred_tumor_mask[phase_idx, i] / pred_tumor_num[phase_idx, i]
+            )
         pred_tumor_mask[:, :, 0, :, :] += 1e-15
         pred_tumor_mask = torch.argmax(pred_tumor_mask, 2)
         time_end = time.time()
 
-        pred_tumor_mask = pred_tumor_mask.numpy().astype(np.int16)
+        pred_tumor_mask = pred_tumor_mask.cpu().numpy().astype(np.int16)
         for i in range(len(pred_tumor_mask)):
             idx = (dataset.liver[0] > 0) | (pred_tumor_mask[i] > 0)
             drop = max_region(idx) == 0
@@ -119,11 +112,11 @@ def run_inference(test_fn, args, world_size):
 
 def predict_entry_point():
     parser = argparse.ArgumentParser('Multi-phase Liver Lesion Segmentation')
-    parser.add_argument('-i', type=str, required=True,
+    parser.add_argument('-i', type=str, default="/data1/wulei/example/",
                         help='input folder. Remember to use the correct format for your files!')
-    parser.add_argument('-o', type=str, required=True,
+    parser.add_argument('-o', type=str, default="./output",
                         help='Output folder. If it does not exist it will be created.')
-    parser.add_argument('--checkpoint_path', type=str, required=True)
+    parser.add_argument('--checkpoint_path', type=str, default="/data1/wulei/train_log/mullet_4p_b8_t16_n3/model_29.pth")
     parser.add_argument('--num_classes', type=int, default=4)
     parser.add_argument('--batch_size', type=int, default=1)
     parser.add_argument('--n_ctx', type=int, default=3)

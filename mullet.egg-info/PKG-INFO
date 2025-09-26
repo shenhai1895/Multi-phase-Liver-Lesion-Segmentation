@@ -9,3 +9,10 @@ License: MIT License
 Keywords: deep learning,image segmentation,medical image analysis,medical image segmentation,mullet
 Requires-Python: >=3.9
 License-File: LICENSE
+Requires-Dist: torch~=2.0.1
+Requires-Dist: numpy~=1.24.3
+Requires-Dist: argparse~=1.4.0
+Requires-Dist: SimpleITK~=2.2.1
+Requires-Dist: tqdm~=4.65.0
+Requires-Dist: segmentation_models_pytorch~=0.3.2
+Requires-Dist: scikit-image~=0.19.3

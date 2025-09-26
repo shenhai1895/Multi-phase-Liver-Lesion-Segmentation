@@ -5,8 +5,8 @@ import numpy as np
 from glob import glob
 from torch.utils.data import Dataset
 
-UPPER_BOUND = 160
-LOWER_BOUND = -60
+UPPER_BOUND = 190
+LOWER_BOUND = -65
 
 
 def MinMaxNormalization(img):

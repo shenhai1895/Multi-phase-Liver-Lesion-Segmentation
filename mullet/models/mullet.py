@@ -1,3 +1,5 @@
+import os
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -5,7 +7,6 @@ from segmentation_models_pytorch.encoders import get_encoder
 from torch.nn import TransformerDecoderLayer, LayerNorm, TransformerDecoder
 
 from mullet.nn.positional_encoding import PositionalEncoding1D, PositionalEncodingPermute2D
-
 
 class GlobalZ(nn.Module):
     def __init__(self, in_channel=512):
@@ -88,78 +89,42 @@ class GlobalS(nn.Module):
 
         return context_pool_s
 
-class Decoder(nn.Module):
-    def __init__(self, num_classes, high_level_inplanes, low_level_inplanes, BatchNorm):
-        super(Decoder, self).__init__()
-        self.conv1 = nn.Conv2d(low_level_inplanes, 256, 1, bias=False)
-        self.bn1 = BatchNorm(256)
-        self.relu = nn.Mish(inplace=True)
-        self.last_conv = nn.Sequential(
-            nn.Conv2d(high_level_inplanes + 256, 256, kernel_size=3, stride=1, padding=1, bias=False),
-            BatchNorm(256),
-            nn.Mish(inplace=True),
-            nn.Dropout(0.5),
-            nn.Conv2d(256, 256, kernel_size=3, stride=1, padding=1, bias=False),
-            BatchNorm(256),
-            nn.Mish(inplace=True),
-            nn.Dropout(0.1),
-            nn.Conv2d(256, num_classes, kernel_size=3,
-                      padding=1)
-        )
-        self._init_weight()
-
-    def forward(self, x, low_level_feat):
-        low_level_feat = self.conv1(low_level_feat)
-        low_level_feat = self.bn1(low_level_feat)
-        low_level_feat = self.relu(low_level_feat)
-        x = F.interpolate(x, size=low_level_feat.size()[2:], mode='bilinear', align_corners=True)
-        x = torch.cat((x, low_level_feat), dim=1)
-        x = self.last_conv(x)
-
-        return x
-
-    def _init_weight(self):
-        for m in self.modules():
-            if isinstance(m, nn.Conv2d):
-                torch.nn.init.kaiming_normal_(m.weight)
-            elif isinstance(m, nn.SyncBatchNorm):
-                m.weight.data.fill_(1)
-                m.bias.data.zero_()
-            elif isinstance(m, nn.BatchNorm2d):
-                m.weight.data.fill_(1)
-                m.bias.data.zero_()
-
-
 class TokenLearnerModuleV2(nn.Module):
     def __init__(self, in_channel=512, num_tokens=8):
         super().__init__()
         self.num_tokens = num_tokens
-        self.ln = nn.GroupNorm(1, in_channel)
+        self.ln = nn.GroupNorm(8, in_channel)
         self.global_z = GlobalZ(in_channel)
         self.global_s = GlobalS(in_channel)
-        self.conv_3x3 = nn.Conv3d(in_channel, in_channel, (3, 3, 3), groups=8, bias=False, padding=(1, 1, 1))
-        self.conv2 = nn.Sequential(nn.Conv2d(in_channel, in_channel, (1, 1), bias=False),
-                                   nn.GroupNorm(1, in_channel),
-                                   nn.Mish(),
-                                   nn.Conv2d(in_channel, in_channel, (1, 1), bias=False),
-                                   nn.GroupNorm(1, in_channel),
-                                   nn.Mish(),
-                                   nn.Conv2d(in_channel, in_channel, (1, 1), bias=False),
-                                   nn.GroupNorm(1, in_channel),
-                                   nn.Mish(),
-                                   nn.Conv2d(in_channel, num_tokens, (1, 1), bias=False),
-                                   )
+        # self.conv1 = nn.Conv2d(in_channel, in_channel, (1, 1), groups=8, bias=False)
+        self.conv_3x3 = nn.Conv3d(
+            in_channel, in_channel, (3, 3, 3), groups=8, bias=False, padding=(1, 1, 1)
+        )
+        # self.conv_5x5 = nn.Conv3d(in_channel, in_channel, (5, 5, 5), groups=8, bias=False, padding=(2, 2, 2))
+        # self.conv_7x7 = nn.Conv3d(in_channel, in_channel, (7, 7, 7), groups=8, bias=False, padding=(3, 3, 3))
+        self.conv2 = nn.Sequential(
+            nn.Conv2d(in_channel, in_channel, (1, 1), bias=False, groups=8),
+            nn.GroupNorm(8, in_channel),
+            nn.Mish(),
+            nn.Conv2d(in_channel, in_channel, (1, 1), bias=False, groups=8),
+            nn.GroupNorm(8, in_channel),
+            nn.Mish(),
+            nn.Conv2d(in_channel, in_channel, (1, 1), bias=False, groups=8),
+            nn.GroupNorm(8, in_channel),
+            nn.Mish(),
+            nn.Conv2d(in_channel, num_tokens, (1, 1), bias=False, groups=8),
+        )
         self.conv_feat = nn.Conv2d(in_channel, in_channel, (1, 1), groups=8, bias=False)
 
     def forward(self, x, x_aux):
         b, n, c, h, w = x.shape
         global_z = self.global_z(x, x_aux, x_aux)
         global_s = self.global_s(x, x_aux, x_aux)
-        local = self.conv_3x3(x_aux.permute(0, 2, 1, 3, 4))
-        local = torch.sigmoid(local * x.permute(0, 2, 1, 3, 4)) * local
-        local = local.permute(0, 2, 1, 3, 4)
+        local = self.conv_3x3(x_aux.permute(0, 2, 1, 3, 4).contiguous())
+        local = torch.sigmoid(local * x.permute(0, 2, 1, 3, 4).contiguous()) * local
+        local = local.permute(0, 2, 1, 3, 4).contiguous()
 
-        selected = x + global_z + global_s + local
+        selected = global_z + global_s + local + x
         selected = self.ln(selected.reshape(b * n, c, h, w))
         feat = selected
         selected = self.conv2(selected)
@@ -167,7 +132,7 @@ class TokenLearnerModuleV2(nn.Module):
 
         feat = self.conv_feat(feat)
         feat = feat.reshape(-1, c, h * w)
-        feat = torch.einsum("bts, bcs->btc", selected, feat)
+        feat = torch.einsum("bts, bcs->btc", selected, feat).contiguous()
         return feat
 
 
@@ -181,41 +146,51 @@ class TokenFuser(nn.Module):
         self.mix = nn.Conv2d(in_channel, num_tokens, (1, 1), groups=8, bias=False)
 
     def forward(self, tokens, origin):
+        # tokens = tokens.permute(0, 2, 1)
         tokens = self.ln1(tokens)
         tokens = self.conv1(tokens)
         tokens = self.ln2(tokens)
+        # tokens = tokens.permute(0, 2, 1)
 
         origin = self.ln3(origin)
         origin = self.mix(origin)
         origin = torch.sigmoid(origin)
-        mix = torch.einsum("bct,bthw->bchw", tokens, origin)
+        mix = torch.einsum("bct,bthw->bchw", tokens, origin).contiguous()
         return mix
 
 
-class TransformerBlock(nn.Module):
-    def __init__(self, in_channel=512,
-                 n_ctx=9,
-                 num_tokens=8):
+class Head(nn.Module):
+    def __init__(self, in_channel=512, num_tokens=16):
         super().__init__()
-        self.n_ctx = n_ctx
         self.num_tokens = num_tokens
         self.in_channel = in_channel
-        decoder_layer = TransformerDecoderLayer(in_channel, nhead=8, dim_feedforward=1024, dropout=0.1,
-                                                batch_first=True)
-        decoder_norm = LayerNorm(in_channel)
+        # self.ln1 = nn.GroupNorm(1, in_channel)
+        # self.ln2 = nn.GroupNorm(1, in_channel)
+        # self.ln3 = nn.GroupNorm(1, in_channel)
+        # self.mha1 = nn.MultiheadAttention(embed_dim=in_channel,
+        #                                   num_heads=8,
+        #                                   dropout=0.1,
+        #                                   bias=False)
+        decoder_layer = TransformerDecoderLayer(
+            in_channel, nhead=8, dim_feedforward=1024, dropout=0.1, batch_first=True
+        )
+        # decoder_norm = LayerNorm(in_channel)
         self.TokenLearner_p = TokenLearnerModuleV2(in_channel, num_tokens=num_tokens)
         self.TokenLearner_a = TokenLearnerModuleV2(in_channel, num_tokens=num_tokens)
         self.TokenLearner_v = TokenLearnerModuleV2(in_channel, num_tokens=num_tokens)
         self.TokenLearner_d = TokenLearnerModuleV2(in_channel, num_tokens=num_tokens)
-        self.decoder_p = TransformerDecoder(decoder_layer, 6, decoder_norm)
-        self.decoder_a = TransformerDecoder(decoder_layer, 6, decoder_norm)
-        self.decoder_v = TransformerDecoder(decoder_layer, 6, decoder_norm)
-        self.decoder_d = TransformerDecoder(decoder_layer, 6, decoder_norm)
+        self.decoder_p = TransformerDecoder(decoder_layer, 6)
+        self.decoder_a = TransformerDecoder(decoder_layer, 6)
+        self.decoder_v = TransformerDecoder(decoder_layer, 6)
+        self.decoder_d = TransformerDecoder(decoder_layer, 6)
         self.TokenFuser = TokenFuser(in_channel, num_tokens=num_tokens)
+        # self._init_weight()
 
-    def forward(self, x):
+    def forward(self, x, b, s, n):
+        bsn, c, h, w = x.shape
+        x = x.reshape(b, s, n, c, h, w)
         x_p, x_a, x_v, x_d = x[:, 0], x[:, 1], x[:, 2], x[:, 3]
-        b, n, c, h, w = x_a.shape
+
         token_p = self.TokenLearner_p(x_p, x_v)
         token_a = self.TokenLearner_a(x_a, x_v)
         token_v = self.TokenLearner_v(x_v, x_a)
@@ -226,15 +201,31 @@ class TransformerBlock(nn.Module):
         token_v = token_v.reshape(b, n * self.num_tokens, c)
         token_d = token_d.reshape(b, n * self.num_tokens, c)
 
-        token_p_tmp = self.decoder_p(token_p, torch.cat([token_p, token_a, token_v, token_d], 1))
-        token_a_tmp = self.decoder_a(token_a, torch.cat([token_p, token_a, token_v, token_d], 1))
-        token_v_tmp = self.decoder_v(token_v, torch.cat([token_p, token_a, token_v, token_d], 1))
-        token_d_tmp = self.decoder_d(token_d, torch.cat([token_p, token_a, token_v, token_d], 1))
+        token_p_tmp = self.decoder_p(token_p, torch.cat([token_p, token_a, token_v], 1))
+        token_a_tmp = self.decoder_a(token_a, torch.cat([token_p, token_a, token_v], 1))
+        token_v_tmp = self.decoder_v(token_v, torch.cat([token_p, token_a, token_v], 1))
+        token_d_tmp = self.decoder_d(token_d, torch.cat([token_p, token_a, token_v], 1))
 
-        token_p_tmp = token_p_tmp.reshape(-1, self.num_tokens, self.in_channel).permute(0, 2, 1)
-        token_a_tmp = token_a_tmp.reshape(-1, self.num_tokens, self.in_channel).permute(0, 2, 1)
-        token_v_tmp = token_v_tmp.reshape(-1, self.num_tokens, self.in_channel).permute(0, 2, 1)
-        token_d_tmp = token_d_tmp.reshape(-1, self.num_tokens, self.in_channel).permute(0, 2, 1)
+        token_p_tmp = (
+            token_p_tmp.reshape(-1, self.num_tokens, self.in_channel)
+            .permute(0, 2, 1)
+            .contiguous()
+        )
+        token_a_tmp = (
+            token_a_tmp.reshape(-1, self.num_tokens, self.in_channel)
+            .permute(0, 2, 1)
+            .contiguous()
+        )
+        token_v_tmp = (
+            token_v_tmp.reshape(-1, self.num_tokens, self.in_channel)
+            .permute(0, 2, 1)
+            .contiguous()
+        )
+        token_d_tmp = (
+            token_d_tmp.reshape(-1, self.num_tokens, self.in_channel)
+            .permute(0, 2, 1)
+            .contiguous()
+        )
 
         x_p = x_p.reshape(b * n, c, h, w)
         x_a = x_a.reshape(b * n, c, h, w)
@@ -244,60 +235,163 @@ class TransformerBlock(nn.Module):
         x_a = self.TokenFuser(token_a_tmp, x_a) + x_a
         x_v = self.TokenFuser(token_v_tmp, x_v) + x_v
         x_d = self.TokenFuser(token_d_tmp, x_d) + x_d
-        out = torch.stack([x_p, x_a, x_v, x_d], 1).reshape(b, -1, n, c, h, w)
+        out = torch.stack([x_p, x_a, x_v, x_d], 1).reshape(-1, c, h, w)
         return out
 
 
-class MULLET(nn.Module):
-    def __init__(self, encoder_name="resnet34",
-                 in_channels=3,
-                 encoder_depth=5,
-                 num_tokens=24,
-                 cls=4,
-                 n_context=3,
-                 bn=nn.BatchNorm2d
-                 ):
+class SegformerHead(nn.Module):
+    """The all mlp Head of segformer.
+
+    This head is the implementation of
+    `Segformer <https://arxiv.org/abs/2105.15203>` _.
+
+    Args:
+        interpolate_mode: The interpolate mode of MLP head upsample operation.
+            Default: 'bilinear'.
+    """
+
+    def __init__(
+        self,
+        in_channels,
+        cls,
+        channels=256,
+        in_index=[0, 1, 2, 3],
+        interpolate_mode="bilinear",
+        num_tokens=24,
+        **kwargs
+    ):
         super().__init__()
-        self.n_context = n_context
+
+        self.interpolate_mode = interpolate_mode
         self.num_tokens = num_tokens
-        self.num_classes = cls
+        self.in_channels = in_channels
+        num_inputs = len(self.in_channels)
+
+        assert num_inputs == len(in_index)
+
+        self.convs = nn.ModuleList()
+        for i in range(num_inputs):
+            self.convs.append(
+                nn.Sequential(
+                    nn.Conv2d(
+                        in_channels=self.in_channels[i],
+                        out_channels=channels,
+                        kernel_size=1,
+                        bias=False,
+                    ),
+                    nn.BatchNorm2d(channels),
+                    nn.Mish(True),
+                )
+            )
+
+        self.last_conv = nn.Sequential(
+            nn.Conv2d(
+                channels * num_inputs,
+                channels,
+                kernel_size=3,
+                stride=1,
+                padding=1,
+                bias=False,
+            ),
+            nn.BatchNorm2d(256),
+            nn.Mish(inplace=True),
+            nn.Dropout(0.5),
+            nn.Conv2d(
+                channels, channels, kernel_size=3, stride=1, padding=1, bias=False
+            ),
+            nn.BatchNorm2d(channels),
+            nn.Mish(inplace=True),
+            nn.Dropout(0.1),
+            nn.Conv2d(channels, cls, kernel_size=1, bias=False),
+        )
+
+        self._init_weight()
+
+    def forward(self, inputs, shapes):
+        # Receive 4 stage backbone feature map: 1/4, 1/8, 1/16, 1/32
+        outs = []
+        for idx in range(len(inputs)):
+            x = inputs[idx]
+            conv = self.convs[idx]
+            hw_shape = shapes[idx]
+            outs.append(
+                F.interpolate(
+                    input=conv(x),
+                    size=shapes[0],
+                    mode=self.interpolate_mode,
+                    align_corners=False,
+                )
+            )
+
+        out = self.last_conv(torch.cat(outs, dim=1).contiguous())
+
+        return out
+
+    def _init_weight(self):
+        for m in self.modules():
+            if isinstance(m, nn.Conv2d):
+                torch.nn.init.kaiming_normal_(m.weight)
+            elif isinstance(m, nn.SyncBatchNorm):
+                m.weight.data.fill_(1)
+                m.bias.data.zero_()
+            elif isinstance(m, nn.BatchNorm2d):
+                m.weight.data.fill_(1)
+                m.bias.data.zero_()
+
+
+class MULLET(nn.Module):
+    def __init__(
+        self,
+        encoder_name="resnet34",
+        in_channels=3,
+        encoder_depth=5,
+        cls=4,
+        num_tokens=16,
+        n_context=3,
+        phase_id=[1, 2],
+    ):
+        super().__init__()
+        # n_context=args.n_ctx
+        self.encoder_name = encoder_name
+        self.in_channels = in_channels
+        self.encoder_depth = encoder_depth
+        self.phase_id = phase_id
+        self.cls = cls
+
         self.encoder = get_encoder(
-            encoder_name,
-            in_channels=in_channels,
-            depth=encoder_depth,
+            self.encoder_name,
+            in_channels=self.in_channels,
+            depth=self.encoder_depth,
             weights="imagenet",
             output_stride=16,
         )
-        self.decoder = Decoder(cls, 512, 64, bn)
 
-        self.TransformerBlock = TransformerBlock(512, n_ctx=n_context, num_tokens=num_tokens)
+        self.head = Head(self.encoder.out_channels[-1], num_tokens=num_tokens)
+        self.decoder = SegformerHead(
+            in_channels=self.encoder.out_channels[2:],
+            cls=cls,
+            channels=256,
+            in_index=[0, 1, 2, 3],
+            num_tokens=num_tokens,
+        )
 
     def forward(self, x):
         b, s, n, c, h, w = x.shape
         x = x.reshape(b * s * n, c, h, w)
         x_feat = self.encoder(x)
-        h_feat, low_feat = x_feat[-1], x_feat[2]
-        h_feat = h_feat.reshape(b, s, n, *h_feat.shape[1:])
-        low_feat = low_feat.reshape(b, s, n, *low_feat.shape[1:])
-        h_feat = self.TransformerBlock(h_feat)
+        x_feat[-1] = self.head(x_feat[-1], b, s, n)
 
-        feat_p = h_feat[:, 0].reshape(-1, *h_feat.shape[3:])
-        feat_a = h_feat[:, 1].reshape(-1, *h_feat.shape[3:])
-        feat_v = h_feat[:, 2].reshape(-1, *h_feat.shape[3:])
-        feat_d = h_feat[:, 3].reshape(-1, *h_feat.shape[3:])
+        shapes = [i.shape[2:] for i in x_feat[2:]]
+        mask = self.decoder(x_feat[2:], shapes)
+        mask = F.interpolate(
+            mask, size=(h, w), mode="bilinear", align_corners=False
+        ).contiguous()
+        mask = mask.view(b, s, n, -1, h, w).permute(1, 0, 3, 2, 4, 5).contiguous()
 
-        x_p_masks = self.decoder(feat_p, low_feat[:, 0].reshape(-1, *low_feat.shape[3:]))
-        x_a_masks = self.decoder(feat_a, low_feat[:, 1].reshape(-1, *low_feat.shape[3:]))
-        x_v_masks = self.decoder(feat_v, low_feat[:, 2].reshape(-1, *low_feat.shape[3:]))
-        x_d_masks = self.decoder(feat_d, low_feat[:, 3].reshape(-1, *low_feat.shape[3:]))
+        return list(mask)
 
-        x_p_masks = F.interpolate(x_p_masks, size=(h, w), mode='bilinear', align_corners=True)
-        x_a_masks = F.interpolate(x_a_masks, size=(h, w), mode='bilinear', align_corners=True)
-        x_v_masks = F.interpolate(x_v_masks, size=(h, w), mode='bilinear', align_corners=True)
-        x_d_masks = F.interpolate(x_d_masks, size=(h, w), mode='bilinear', align_corners=True)
 
-        x_p_masks = x_p_masks.reshape(b, n, -1, h, w).permute(0, 2, 1, 3, 4)
-        x_a_masks = x_a_masks.reshape(b, n, -1, h, w).permute(0, 2, 1, 3, 4)
-        x_v_masks = x_v_masks.reshape(b, n, -1, h, w).permute(0, 2, 1, 3, 4)
-        x_d_masks = x_d_masks.reshape(b, n, -1, h, w).permute(0, 2, 1, 3, 4)
-        return x_p_masks, x_a_masks, x_v_masks, x_d_masks  # (b, c, z, h, w)
+if __name__ == "__main__":
+    a = MULLET().cuda()
+    b = torch.rand((10, 3, 3, 3, 256, 256)).cuda()
+    a(b)
