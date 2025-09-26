@@ -112,11 +112,11 @@ def run_inference(test_fn, args, world_size):
 
 def predict_entry_point():
     parser = argparse.ArgumentParser('Multi-phase Liver Lesion Segmentation')
-    parser.add_argument('-i', type=str, default="/data1/wulei/example/",
+    parser.add_argument('-i', type=str, required=True,
                         help='input folder. Remember to use the correct format for your files!')
-    parser.add_argument('-o', type=str, default="./output",
+    parser.add_argument('-o', type=str, required=True,
                         help='Output folder. If it does not exist it will be created.')
-    parser.add_argument('--checkpoint_path', type=str, default="/data1/wulei/train_log/mullet_4p_b8_t16_n3/model_29.pth")
+    parser.add_argument('--checkpoint_path', type=str, required=True)
     parser.add_argument('--num_classes', type=int, default=4)
     parser.add_argument('--batch_size', type=int, default=1)
     parser.add_argument('--n_ctx', type=int, default=3)
